@@ -5,12 +5,13 @@ const path = require("path");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 
-const app = express();
+const app = express(); // creating a server instance
 app.use(express.json());
 
-const dbPath = path.join(__dirname, "twitterClone.db");
-
+const dbPath = path.join(__dirname, "addStory.db");
 let database = null;
+
+// function to start the server
 const initializeDbAndServer = async () => {
   try {
     database = await open({
@@ -27,432 +28,157 @@ const initializeDbAndServer = async () => {
 };
 initializeDbAndServer();
 
-// API 1
-app.post("/register/", async (request, response) => {
-  const { username, password, name, gender } = request.body;
+// defining variables
+let wordsCount = 0;
+let title = "";
+let storyId = 1;
+let paragraphsCount = 0;
+let sentencesCount = 0;
+let currentSentence = "";
+let sentenceLength = 0;
+let paragraphsList = [{ sentences: [] }];
+let stories = [];
+let content = "";
 
-  const selectUserQuery = `SELECT *
-     FROM user
-     WHERE username='${username}';`;
+// to format the data based on the words count
+const formData = (word) => {
+  wordsCount += 1;
+  if (paragraphsCount >= 6) {
+    stories.push([storyId, paragraphsList.length]);
+    storyId += 1;
+    paragraphsCount = 0;
+    paragraphsList = [{ sentences: [] }];
+    wordsCount = 1;
+    title = "";
+  }
 
-  const dbQuery = await database.get(selectUserQuery);
-
-  if (dbQuery !== undefined) {
-    response.status(400);
-    response.send("User already exists");
+  if (wordsCount <= 2) {
+    title = title + " " + word;
+    title = title.trim();
   } else {
-    if (password.length < 6) {
-      response.status(400);
-      response.send("Password is too short");
+    sentenceLength += 1;
+    if (sentenceLength <= 10) {
+      currentSentence = currentSentence + " " + word;
+      currentSentence = currentSentence.trim();
     } else {
-      const hashedPassword = await bcrypt.hash(password, 10);
-      const insertUserQuery = `INSERT INTO user (name,username,password,gender)
-       VALUES ('${name}','${username}','${hashedPassword}','${gender}');`;
-
-      const dbAddUser = await database.run(insertUserQuery);
-      response.status(200);
-      response.send("User created successfully");
+      sentenceLength = 1;
+      currentSentence = "";
+      currentSentence = currentSentence + " " + word;
+      currentSentence = currentSentence.trim();
+      sentencesCount += 1;
     }
   }
-});
-
-// API 2
-app.post("/login/", async (request, response) => {
-  const { username, password } = request.body;
-
-  const getUserQuery = `SELECT *
-    FROM user
-    WHERE username ='${username}';`;
-
-  const dbGetUser = await database.get(getUserQuery);
-
-  if (dbGetUser === undefined) {
-    response.status(400);
-    response.send("Invalid user");
-  } else {
-    const isPasswordMatched = await bcrypt.compare(
-      password,
-      dbGetUser.password
-    );
-
-    if (isPasswordMatched === true) {
-      const payload = {
-        username: username,
-      };
-      const jwtToken = await jwt.sign(payload, "MY_SECRET_TOKEN");
-      response.send({ jwtToken });
-    } else {
-      response.status(400);
-      response.send("Invalid password");
-    }
+  if (sentencesCount > 15) {
+    paragraphsCount += 1;
+    sentencesCount = 0;
+    paragraphsList[paragraphsCount] = { sentences: [] };
   }
-});
 
-// Authenticate Token
-function authenticateToken(request, response, next) {
-  const authHeader = request.headers["authorization"];
-  console.log(request.body);
-  let jwtToken;
-  if (authHeader !== undefined) {
-    jwtToken = authHeader.split(" ")[1];
-  }
-  if (jwtToken === undefined) {
-    response.status(401);
-    response.send("Invalid JWT Token");
-  } else {
-    jwt.verify(jwtToken, "MY_SECRET_TOKEN", async (error, payload) => {
-      if (error) {
-        response.status(401);
-        response.send("Invalid JWT Token");
-      } else {
-        request.body = {
-          payloadUserName: payload.username,
-        };
-        next();
-      }
-    });
-  }
-}
-// Authenticate Token1
-function authenticateToken1(request, response, next) {
-  const authHeader = request.headers["authorization"];
-  console.log(request.body);
-  let jwtToken;
-  if (authHeader !== undefined) {
-    jwtToken = authHeader.split(" ")[1];
-  }
-  if (jwtToken === undefined) {
-    response.status(401);
-    response.send("Invalid JWT Token");
-  } else {
-    jwt.verify(jwtToken, "MY_SECRET_TOKEN", async (error, payload) => {
-      if (error) {
-        response.status(401);
-        response.send("Invalid JWT Token");
-      } else {
-        const { tweet } = request.body;
-        request.body = {
-          payloadUserName: payload.username,
-          tweet: tweet,
-        };
-        next();
-      }
-    });
-  }
-}
-const convertDbObjectToJsonObject = (dbObject) => {
-  return {
-    username: dbObject.username,
-    tweet: dbObject.tweet,
-    dateTime: dbObject.date_time,
-  };
+  paragraphsList[paragraphsCount].sentences[sentencesCount] = currentSentence;
 };
 
-// API 3
-app.get("/user/tweets/feed/", authenticateToken, async (request, response) => {
-  const { payloadUserName } = request.body;
+//to convert database object to response object
+const convertDbObjToResponseObj = (dbObj) => {
+  let responseObj = {
+    id: dbObj.id,
+    title: dbObj.title,
+    created_at: dbObj.created_at,
+    updated_at: dbObj.updated_at,
+    paragraphs: JSON.parse(dbObj.body),
+  };
+  return responseObj;
+};
 
-  console.log(payloadUserName);
-  const selectUserIdQuery = `SELECT user_id
-  FROM user
-  WHERE username='${payloadUserName}';`;
+//to convert database list item to response list item
+const convertDbListItemToResponseListItem = (each) => {
+  let eachItem = {
+    id: each.id,
+    title: each.title,
+    created_at: each.created_at,
+    updated_at: each.updated_at,
+  };
+  return eachItem;
+};
 
-  const dbUserId = await database.get(selectUserIdQuery);
-  console.log(dbUserId);
+// API 1 to write words into database
+app.post("/add", async (request, response) => {
+  const { word } = request.body;
 
-  const userId = dbUserId.user_id;
-  console.log(userId);
-
-  const selectQuery = `SELECT user.username as username,tweet.tweet as tweet,tweet.date_time as dateTime
-  FROM (follower inner join tweet on 
-    follower.following_user_id=tweet.user_id) as t inner join user on
-    t.following_user_id=user.user_id
-  WHERE follower.follower_user_id=${userId}
-  ORDER BY tweet.date_time DESC;`;
-
-  const dbFollowingUserIds = await database.all(selectQuery);
-  response.send(dbFollowingUserIds);
-});
-
-// API 4
-app.get("/user/following/", authenticateToken, async (request, response) => {
-  const { payloadUserName } = request.body;
-
-  console.log(payloadUserName);
-  const selectUserIdQuery = `SELECT user_id
-  FROM user
-  WHERE username='${payloadUserName}';`;
-
-  const dbUserId = await database.get(selectUserIdQuery);
-  console.log(dbUserId);
-
-  const userId = dbUserId.user_id;
-  console.log(userId);
-
-  const selectNamesQuery = `SELECT user.name
-  FROM follower inner join user on follower.following_user_id=user.user_id where follower.follower_user_id=${userId};`;
-
-  const dbNames = await database.all(selectNamesQuery);
-  response.send(dbNames);
-});
-
-// API 5
-app.get("/user/followers", authenticateToken, async (request, response) => {
-  const { payloadUserName } = request.body;
-
-  console.log(payloadUserName);
-  const selectUserIdQuery = `SELECT user_id
-  FROM user
-  WHERE username='${payloadUserName}';`;
-
-  const dbUserId = await database.get(selectUserIdQuery);
-  console.log(dbUserId);
-
-  const userId = dbUserId.user_id;
-  console.log(userId);
-
-  const selectFollowersNames = `select user.name 
-  from user inner join follower on 
-       user.user_id=follower.follower_user_id 
-  where follower.following_user_id=${userId};`;
-
-  const dbFollowerNames = await database.all(selectFollowersNames);
-  response.send(dbFollowerNames);
-});
-
-// API 6
-app.get("/tweets/:tweetId/", authenticateToken, async (request, response) => {
-  const { payloadUserName } = request.body;
-
-  console.log(payloadUserName);
-  const selectUserIdQuery = `SELECT user_id
-  FROM user
-  WHERE username='${payloadUserName}';`;
-
-  const dbUserId = await database.get(selectUserIdQuery);
-  console.log(dbUserId);
-
-  const userId = dbUserId.user_id;
-  console.log(userId);
-
-  const { tweetId } = request.params;
-
-  const checkQuery = `select * 
-  from follower inner join tweet 
-     on follower.following_user_id=tweet.user_id 
-  where follower.follower_user_id=${userId} and tweet.tweet_id=${tweetId};`;
-
-  const dbCheck = await database.all(checkQuery);
-  console.log(dbCheck);
-  if (dbCheck.length === 0) {
-    response.status(401);
-    response.send("Invalid Request");
+  if (word.includes(" ")) {
+    response.status(400);
+    let errorMsg = {
+      error: "multiple words sent",
+    };
+    response.send(errorMsg); // sends error message if more than one word is given as input
   } else {
-    const selectTweetReplyQuery = `select count() as repliesCount
-      from tweet inner join reply on tweet.tweet_id=reply.tweet_id
-      where tweet.tweet_id=${tweetId};`;
+    formData(word);
 
-    const dbReply = await database.get(selectTweetReplyQuery);
+    content = JSON.stringify(paragraphsList);
 
-    const repliesCount = dbReply.repliesCount;
-
-    const selectTweetLikeQuery = `select count() as likesCount
-      from tweet inner join like on tweet.tweet_id=like.tweet_id
-      where tweet.tweet_id=${tweetId};`;
-
-    const dbLike = await database.get(selectTweetLikeQuery);
-
-    const likesCount = dbLike.likesCount;
-
-    const select = `select tweet.tweet, tweet.date_time
-      from tweet 
-      where tweet.tweet_id=${tweetId};`;
-
-    const dbTweet = await database.get(select);
-    const tweet1 = dbTweet.tweet;
-    const date_time1 = dbTweet.date_time;
-
-    response.send({
-      tweet: tweet1,
-      likes: likesCount,
-      replies: repliesCount,
-      dateTime: date_time1,
-    });
-  }
-});
-
-// API 7
-app.get(
-  "/tweets/:tweetId/likes/",
-  authenticateToken,
-  async (request, response) => {
-    const { payloadUserName } = request.body;
-
-    console.log(payloadUserName);
-    const selectUserIdQuery = `SELECT user_id
-  FROM user
-  WHERE username='${payloadUserName}';`;
-
-    const dbUserId = await database.get(selectUserIdQuery);
-    console.log(dbUserId);
-
-    const userId = dbUserId.user_id;
-    console.log(userId);
-
-    const { tweetId } = request.params;
-
-    const checkQuery = `select * 
-  from follower inner join tweet 
-     on follower.following_user_id=tweet.user_id 
-  where follower.follower_user_id=${userId} and tweet.tweet_id=${tweetId};`;
-
-    const dbCheck = await database.all(checkQuery);
-    console.log(dbCheck);
-    if (dbCheck.length === 0) {
-      response.status(401);
-      response.send("Invalid Request");
+    //to write data into database
+    if (wordsCount === 1) {
+      let date = new Date();
+      const putQuery = `insert into story(id,title,body,created_at)
+                     values ('${storyId}','${title}','${content}','${date}');`;
+      const dbQuery = await database.run(putQuery);
+    } else if (wordsCount === 2) {
+      let date = new Date();
+      const updateTitleQuery = `update story
+                        set title='${title}',updated_at='${date}'
+                        where id='${storyId}';`;
+      const dbQuery = await database.run(updateTitleQuery);
     } else {
-      const selectQuery = `select user.username
-        from like inner join user on like.user_id=user.user_id 
-        where like.tweet_id=${tweetId};`;
-
-      const dbSelect = await database.all(selectQuery);
-      console.log(dbSelect);
-
-      let namesList = [];
-      for (let each of dbSelect) {
-        namesList.push(each.username);
-      }
-      console.log(namesList);
-
-      response.send({
-        likes: namesList,
-      });
+      let date = new Date();
+      const updateQuery = `update story
+                        set body='${content}',updated_at='${date}'
+                        where id='${storyId}';`;
+      const dbQuery = await database.run(updateQuery);
     }
-  }
-);
 
-/// API 8
-app.get(
-  "/tweets/:tweetId/replies/",
-  authenticateToken,
-  async (request, response) => {
-    const { payloadUserName } = request.body;
-
-    console.log(payloadUserName);
-    const selectUserIdQuery = `SELECT user_id
-  FROM user
-  WHERE username='${payloadUserName}';`;
-
-    const dbUserId = await database.get(selectUserIdQuery);
-    console.log(dbUserId);
-
-    const userId = dbUserId.user_id;
-    console.log(userId);
-
-    const { tweetId } = request.params;
-
-    const checkQuery = `select * 
-  from follower inner join tweet 
-     on follower.following_user_id=tweet.user_id 
-  where follower.follower_user_id=${userId} and tweet.tweet_id=${tweetId};`;
-
-    const dbCheck = await database.all(checkQuery);
-    console.log(dbCheck);
-    if (dbCheck.length === 0) {
-      response.status(401);
-      response.send("Invalid Request");
-    } else {
-      const selectQuery = `select user.name,reply.reply
-        from reply inner join user on reply.user_id=user.user_id
-        where reply.tweet_id=${tweetId};`;
-
-      const dbSelect = await database.all(selectQuery);
-      console.log(dbSelect);
-      response.send({
-        replies: dbSelect,
-      });
-    }
-  }
-);
-
-// API 9
-app.get("/user/tweets/", authenticateToken, async (request, response) => {
-  const { payloadUserName } = request.body;
-
-  console.log(payloadUserName);
-  const selectUserIdQuery = `SELECT user_id
-  FROM user
-  WHERE username='${payloadUserName}';`;
-
-  const dbUserId = await database.get(selectUserIdQuery);
-  console.log(dbUserId);
-
-  const userId = dbUserId.user_id;
-  console.log(userId);
-
-  const selectQuery = `select t.tweet,count() as likes,replies,t.dateTime  from (select tweet.tweet_id as tid,tweet.tweet as tweet, count() as replies,tweet.date_time as dateTime from tweet left join reply on tweet.tweet_id =reply.tweet_id where tweet.user_id=${userId} group by tweet.tweet_id) as t inner join like on t.tid =like.tweet_id group by t.tid;`;
-
-  const dbTweets = await database.all(selectQuery);
-  response.send(dbTweets);
-});
-
-// API 10
-app.post("/user/tweets/", authenticateToken1, async (request, response) => {
-  const { payloadUserName } = request.body;
-
-  console.log(payloadUserName);
-  const selectUserIdQuery = `SELECT user_id
-  FROM user
-  WHERE username='${payloadUserName}';`;
-
-  const dbUserId = await database.get(selectUserIdQuery);
-  console.log(dbUserId);
-
-  const userId = dbUserId.user_id;
-  console.log(userId);
-  let date = new Date();
-  console.log(date);
-
-  const { tweet } = request.body;
-  console.log(request.body);
-  console.log(tweet);
-  const postQuery = `INSERT INTO tweet (tweet,user_id,date_time)
-  VALUES ('${tweet}','${userId}','${date}')`;
-
-  await database.run(postQuery);
-  response.send("Created a Tweet");
-});
-
-// API 11
-app.delete("/tweets/:tweetId", authenticateToken, async (request, response) => {
-  const { payloadUserName } = request.body;
-
-  const selectUserIdQuery = `SELECT user_id
-  FROM user
-  WHERE username='${payloadUserName}';`;
-
-  const dbUserId = await database.get(selectUserIdQuery);
-
-  const userId = dbUserId.user_id;
-
-  const { tweetId } = request.params;
-
-  const checkQuery = `SELECT *
-   FROM tweet
-   WHERE tweet_id=${tweetId} and user_id=${userId}`;
-
-  const dbCheck = await database.get(checkQuery);
-
-  if (dbCheck === undefined) {
-    response.status(401);
-    response.send("Invalid Request");
-  } else {
-    const deleteQuery = `DELETE FROM tweet
-      WHERE tweet_id=${tweetId};`;
-
-    await database.run(deleteQuery);
-    response.send("Tweet Removed");
+    let result = {
+      id: storyId,
+      title: title,
+      current_sentence: currentSentence,
+    };
+    response.send(result);
   }
 });
+
+//API 2 to get specific story from the database by using its id
+app.get("/stories/:storyId", async (request, response) => {
+  const { storyId } = request.params;
+
+  const getQuery = `select *
+                    from story
+                    where id='${storyId}';`;
+
+  const dbQuery = await database.get(getQuery);
+  let result = convertDbObjToResponseObj(dbQuery);
+  response.send(result);
+});
+
+//API 3 to get stories from the database
+app.get("/stories", async (request, response) => {
+  const { limit, offset, sort = "created_at", order = "asc" } = request.body;
+
+  const getQuery = `select id,title,created_at,updated_at
+                    from story
+                    order by '${sort}' ${order}
+                    limit '${limit}'
+                    offset '${offset}';`;
+  const dbQuery = await database.all(getQuery);
+
+  let resultsList = dbQuery.map((each) =>
+    convertDbListItemToResponseListItem(each)
+  );
+  let responseObj = {
+    limit: limit,
+    offset: offset,
+    count: resultsList.length,
+    results: resultsList,
+  };
+
+  response.send(responseObj);
+});
+
 module.exports = app;
