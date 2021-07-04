@@ -20,6 +20,7 @@ const initializeDbAndServer = async () => {
     });
     app.listen(3000, () => {
       console.log("Server started at port: 3000");
+      deleteRowsInitially();
     });
   } catch (error) {
     console.log(`Db Error: ${error.message}`);
@@ -27,6 +28,13 @@ const initializeDbAndServer = async () => {
   }
 };
 initializeDbAndServer();
+
+/* when the project starts the changes made to the database earlier will be lost 
+to enter new stories every time after executing the project */
+const deleteRowsInitially = async () => {
+  const deleteQuery = `delete from story;`;
+  await database.run(deleteQuery);
+};
 
 // defining variables
 let wordsCount = 0;

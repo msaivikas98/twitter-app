@@ -6,6 +6,7 @@
     "author": "",
     "license": "ISC",
     "dependencies": {
+        "adm-zip": "^0.5.5",
         "bcrypt": "5.0.1",
         "date-fns": "^2.21.3",
         "express": "4.17.1",
